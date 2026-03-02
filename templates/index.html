@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quantum Lava Lamp</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #02060c;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        #canvasContainer {
+            width: 100%;
+            height: 100%;
+            filter: url('#goo');
+        }
+
+        canvas {
+            display: block;
+            background: transparent;
+        }
+
+        #status {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: rgba(255, 255, 255, 0.5);
+            font-family: monospace;
+            pointer-events: none;
+            user-select: none;
+            z-index: 100;
+        }
+    </style>
+</head>
+
+<body>
+    <svg xmlns="http://www.w3.org/2000/svg" version="1.1" style="display:none;">
+        <defs>
+            <filter id="goo">
+                <feGaussianBlur in="SourceGraphic" stdDeviation="35" result="blur" />
+                <feColorMatrix in="blur" mode="matrix" values="
+                    1 0 0 0 0  
+                    0 1 0 0 0  
+                    0 0 1 0 0  
+                    0 0 0 50 -20" result="goo" />
+                <feBlend in="SourceGraphic" in2="goo" />
+            </filter>
+        </defs>
+    </svg>
+
+    <div id="canvasContainer">
+        <canvas id="liquidCanvas"></canvas>
+    </div>
+    <div id="status">Establishing Quantum Stream...</div>
+
+    <script>
+        const canvas = document.getElementById('liquidCanvas');
+        const ctx = canvas.getContext('2d');
+        const statusText = document.getElementById('status');
+
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        let activeBlobs = [];
+        let mousePositionX = window.innerWidth / 2;
+        let mousePositionY = window.innerHeight / 2;
+        let isMousePressed = false;
+
+        function linearInterpolate(startValue, endValue, interpolationFactor) {
+            return (1 - interpolationFactor) * startValue + interpolationFactor * endValue;
+        }
+
+        function interpolateHue(startHue, endHue, interpolationFactor) {
+            let hueDifference = endHue - startHue;
+
+            // Handle wrapping around the color wheel
+            if (hueDifference > 0.5) {
+                startHue += 1.0;
+            } else if (hueDifference < -0.5) {
+                endHue += 1.0;
+            }
+
+            let interpolatedHue = startHue + (endHue - startHue) * interpolationFactor;
+            return (interpolatedHue + 1.0) % 1.0;
+        }
+
+        async function initializeLiquid() {
+            try {
+                const initResponse = await fetch('/api/init_liquid');
+                const initData = await initResponse.json();
+
+                activeBlobs = initData.blobs.map(blobData => ({
+                    ...blobData,
+                    x: blobData.x * canvas.width,
+                    y: blobData.y * canvas.height,
+                    vx: blobData.vx * canvas.width,
+                    vy: blobData.vy * canvas.height,
+
+                    target_hue: blobData.hue,
+                    target_sat: blobData.saturation,
+                    lerp_speed: 0.01,
+
+                    target_x: blobData.x * canvas.width,
+                    target_y: blobData.y * canvas.height,
+
+                    fillColor: `hsla(${blobData.hue * 360}, ${blobData.saturation * 100}%, 55%, 0.75)`
+                }));
+
+                statusText.innerText = `Interactive Lava Lamp`;
+                fetchContinuousUpdates();
+            } catch (error) {
+                statusText.innerText = "Lava Lamp Initialization Failed";
+            }
+        }
+
+        async function fetchContinuousUpdates() {
+            try {
+                const updateResponse = await fetch('/api/stream_updates');
+                const updateData = await updateResponse.json();
+
+                updateData.updates.forEach(incomingUpdate => {
+                    const targetBlob = activeBlobs[incomingUpdate.id];
+                    if (targetBlob) {
+                        targetBlob.target_hue = incomingUpdate.target_hue;
+                        targetBlob.target_sat = incomingUpdate.target_sat;
+                        targetBlob.lerp_speed = incomingUpdate.lerp_speed;
+
+                        targetBlob.target_x = incomingUpdate.target_x_norm * canvas.width;
+                        targetBlob.target_y = incomingUpdate.target_y_norm * canvas.height;
+                    }
+                });
+
+                setTimeout(fetchContinuousUpdates, 3000);
+            } catch (error) {
+                setTimeout(fetchContinuousUpdates, 5000);
+            }
+        }
+
+        function updateBlobPhysics() {
+            activeBlobs.forEach(blob => {
+                // Apply velocity
+                blob.x += blob.vx;
+                blob.y += blob.vy;
+
+                // Move towards target coordinates
+                blob.vx += (blob.target_x - blob.x) * 0.00008;
+                blob.vy += (blob.target_y - blob.y) * 0.00008;
+
+                // Mouse interaction (repel)
+                if (isMousePressed) {
+                    const deltaX = blob.x - mousePositionX;
+                    const deltaY = blob.y - mousePositionY;
+                    const distanceToMouse = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+                    const repulsionRadius = 350;
+
+                    if (distanceToMouse < repulsionRadius) {
+                        const repulsionForce = (repulsionRadius - distanceToMouse) / repulsionRadius;
+                        blob.vx += (deltaX / distanceToMouse) * repulsionForce * 2.0;
+                        blob.vy += (deltaY / distanceToMouse) * repulsionForce * 2.0;
+                    }
+                }
+
+                // Apply friction
+                blob.vx *= 0.98;
+                blob.vy *= 0.98;
+
+                // Bounce off edges
+                if (blob.x < -100 || blob.x > canvas.width + 100) blob.vx *= -1;
+                if (blob.y < -100 || blob.y > canvas.height + 100) blob.vy *= -1;
+
+                // Interpolate colors smoothly
+                blob.hue = interpolateHue(blob.hue, blob.target_hue, blob.lerp_speed);
+                blob.saturation = linearInterpolate(blob.saturation, blob.target_sat, blob.lerp_speed);
+
+                blob.fillColor = `hsla(${blob.hue * 360}, ${blob.saturation * 100}%, 55%, 0.75)`;
+            });
+        }
+
+        function renderFrame() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (activeBlobs.length > 0) {
+                updateBlobPhysics();
+
+                ctx.globalCompositeOperation = 'screen';
+
+                activeBlobs.forEach(blob => {
+                    ctx.beginPath();
+                    ctx.arc(blob.x, blob.y, blob.radius, 0, Math.PI * 2);
+                    ctx.fillStyle = blob.fillColor;
+                    ctx.fill();
+                });
+            }
+            requestAnimationFrame(renderFrame);
+        }
+
+        // Event Listeners
+        window.addEventListener('mousedown', (event) => { isMousePressed = true; mousePositionX = event.clientX; mousePositionY = event.clientY; });
+        window.addEventListener('mouseup', () => { isMousePressed = false; });
+        window.addEventListener('mousemove', (event) => { mousePositionX = event.clientX; mousePositionY = event.clientY; });
+        window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; });
+
+        // Start Application
+        initializeLiquid().then(() => renderFrame());
+    </script>
+</body>
+
+</html>
