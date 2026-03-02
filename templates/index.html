@@ -68,6 +68,8 @@
 
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
+        // If screen is smaller than a standard tablet, use 12 blobs. Otherwise, use 30.
+        const targetBlobs = canvas.width < 768 ? 12 : 30;
 
         let activeBlobs = [];
         let mousePositionX = window.innerWidth / 2;
@@ -94,7 +96,7 @@
 
         async function initializeLiquid() {
             try {
-                const initResponse = await fetch('/api/init_liquid');
+                const initResponse = await fetch(`/api/init_liquid?n=${targetBlobs}`);
                 const initData = await initResponse.json();
 
                 activeBlobs = initData.blobs.map(blobData => ({
@@ -123,7 +125,7 @@
 
         async function fetchContinuousUpdates() {
             try {
-                const updateResponse = await fetch('/api/stream_updates');
+                const updateResponse = await fetch(`/api/stream_updates?n=${targetBlobs}`);
                 const updateData = await updateResponse.json();
 
                 updateData.updates.forEach(incomingUpdate => {

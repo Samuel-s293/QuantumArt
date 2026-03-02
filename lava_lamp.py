@@ -1,13 +1,10 @@
-from flask import Flask, jsonify, render_template
+from flask import Flask, jsonify, render_template, request
 from qiskit import QuantumCircuit, transpile
 from qiskit_aer import AerSimulator
 import colorsys
 
 app = Flask(__name__)
 backend = AerSimulator()
-
-# Configuration
-NUM_BLOBS = 30 
 
 def get_quantum_batch(requested_quantity):
     """Generates quantum random floats in [0.0, 1.0]."""
@@ -30,13 +27,15 @@ def get_quantum_batch(requested_quantity):
 
 @app.route('/api/init_liquid')
 def init_liquid():
-    random_floats_required = NUM_BLOBS * 7
+    num_blobs = request.args.get('n', default=30, type=int)
+    num_blobs = min(max(num_blobs, 5), 50)
+    random_floats_required = num_blobs * 7
     quantum_random_floats = get_quantum_batch(random_floats_required)
     
     liquid_blobs = []
     float_index = 0
     
-    for blob_id in range(NUM_BLOBS):
+    for blob_id in range(num_blobs):
         normalized_x = 0.3 + (quantum_random_floats[float_index] * 0.4) 
         normalized_y = 0.3 + (quantum_random_floats[float_index+1] * 0.4)
         velocity_x = (quantum_random_floats[float_index+2] - 0.5) * 0.008
@@ -60,13 +59,15 @@ def init_liquid():
 @app.route('/api/stream_updates')
 def stream_updates():
     """Streams target colors and destinations."""
-    random_floats_required = NUM_BLOBS * 5
+    num_blobs = request.args.get('n', default=30, type=int)
+    num_blobs = min(max(num_blobs, 5), 50)
+    random_floats_required = num_blobs * 5
     quantum_random_floats = get_quantum_batch(random_floats_required)
     
     blob_updates = []
     float_index = 0
     
-    for blob_id in range(NUM_BLOBS):
+    for blob_id in range(num_blobs):
         blob_updates.append({
             'id': blob_id,
             'target_hue': quantum_random_floats[float_index],
