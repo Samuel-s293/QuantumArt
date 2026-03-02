@@ -139,9 +139,7 @@
             masterVolume.gain.setValueAtTime(0.0001, audioContext.currentTime);
             masterVolume.connect(audioContext.destination);
 
-            // --- THE NEW CHORD: D - E - A ---
-            // This is a 'Suspended' feel. It sounds high-tech and "unresolved."
-            const futuristicFrequencies = [146.83, 164.81, 220.00]; // D3, E3, A3
+            const futuristicFrequencies = [293.66, 329.63, 440.00];
 
             for (let i = 0; i < futuristicFrequencies.length; i++) {
                 let oscillator = audioContext.createOscillator();
