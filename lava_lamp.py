@@ -27,8 +27,7 @@ def get_quantum_batch(requested_quantity):
 
 @app.route('/api/init_liquid')
 def init_liquid():
-    num_blobs = request.args.get('n', default=30, type=int)
-    num_blobs = min(max(num_blobs, 5), 50)
+    num_blobs = request.args.get('n', default=23, type=int)
     random_floats_required = num_blobs * 7
     quantum_random_floats = get_quantum_batch(random_floats_required)
     
@@ -40,7 +39,7 @@ def init_liquid():
         normalized_y = 0.3 + (quantum_random_floats[float_index+1] * 0.4)
         velocity_x = (quantum_random_floats[float_index+2] - 0.5) * 0.008
         velocity_y = (quantum_random_floats[float_index+3] - 0.5) * 0.008
-        blob_radius = 60 + (quantum_random_floats[float_index+4] * 100)
+        blob_radius = num_blobs*2 + (quantum_random_floats[float_index+4] * num_blobs*4)
         
         initial_hue = quantum_random_floats[float_index+5]
         initial_saturation = 0.6 + (quantum_random_floats[float_index+6] * 0.4)

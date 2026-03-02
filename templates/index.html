@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Quantum Lava Lamp</title>
     <style>
         body {
@@ -26,9 +26,12 @@
         canvas {
             display: block;
             background: transparent;
+            width: 100%;
+            height: 100%;
+            touch-action: none;
         }
 
-        #status {
+        #statusText {
             position: absolute;
             bottom: 20px;
             left: 20px;
@@ -59,179 +62,182 @@
     <div id="canvasContainer">
         <canvas id="liquidCanvas"></canvas>
     </div>
-    <div id="status">Establishing Quantum Stream...</div>
+    <div id="statusText">Establishing Quantum Stream...</div>
 
     <script>
-        const canvas = document.getElementById('liquidCanvas');
-        const ctx = canvas.getContext('2d');
-        const statusText = document.getElementById('status');
+        const liquidCanvas = document.getElementById('liquidCanvas');
+        const canvasContext = liquidCanvas.getContext('2d');
+        const statusTextElement = document.getElementById('statusText');
 
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-        // If screen is smaller than a standard tablet, use 12 blobs. Otherwise, use 30.
-        const targetBlobs = canvas.width < 768 ? 12 : 30;
+        liquidCanvas.width = window.innerWidth;
+        liquidCanvas.height = window.innerHeight;
 
-        let activeBlobs = [];
-        let mousePositionX = window.innerWidth / 2;
-        let mousePositionY = window.innerHeight / 2;
-        let isMousePressed = false;
+        let liquidBlobsArray = [];
+        let currentMouseX = window.innerWidth / 2;
+        let currentMouseY = window.innerHeight / 2;
+        let isUserDragging = false;
 
-        function linearInterpolate(startValue, endValue, interpolationFactor) {
-            return (1 - interpolationFactor) * startValue + interpolationFactor * endValue;
+        const targetBlobCount = window.innerWidth < 768 ? 18 : 23;
+
+        function interpolateLinear(startValue, endValue, interpolationAmount) {
+            return (1 - interpolationAmount) * startValue + interpolationAmount * endValue;
         }
 
-        function interpolateHue(startHue, endHue, interpolationFactor) {
+        function interpolateHue(startHue, endHue, interpolationAmount) {
             let hueDifference = endHue - startHue;
+            if (hueDifference > 0.5) startHue += 1.0;
+            else if (hueDifference < -0.5) endHue += 1.0;
 
-            // Handle wrapping around the color wheel
-            if (hueDifference > 0.5) {
-                startHue += 1.0;
-            } else if (hueDifference < -0.5) {
-                endHue += 1.0;
-            }
-
-            let interpolatedHue = startHue + (endHue - startHue) * interpolationFactor;
-            return (interpolatedHue + 1.0) % 1.0;
+            let interpolatedResult = startHue + (endHue - startHue) * interpolationAmount;
+            return (interpolatedResult + 1.0) % 1.0;
         }
 
-        async function initializeLiquid() {
+        async function initializeLiquidSimulation() {
             try {
-                const initResponse = await fetch(`/api/init_liquid?n=${targetBlobs}`);
-                const initData = await initResponse.json();
+                const response = await fetch(`/api/init_liquid?n=${targetBlobCount}`);
+                const data = await response.json();
 
-                activeBlobs = initData.blobs.map(blobData => ({
+                liquidBlobsArray = data.blobs.map(blobData => ({
                     ...blobData,
-                    x: blobData.x * canvas.width,
-                    y: blobData.y * canvas.height,
-                    vx: blobData.vx * canvas.width,
-                    vy: blobData.vy * canvas.height,
+                    // Use the short names 'x', 'y', 'vx', 'vy' sent by lava_lamp.py
+                    absolute_position_x: blobData.x * liquidCanvas.width,
+                    absolute_position_y: blobData.y * liquidCanvas.height,
+                    velocity_x: blobData.vx * liquidCanvas.width,
+                    velocity_y: blobData.vy * liquidCanvas.height,
 
                     target_hue: blobData.hue,
-                    target_sat: blobData.saturation,
-                    lerp_speed: 0.01,
+                    target_saturation: blobData.saturation,
+                    color_morph_speed: 0.01,
 
-                    target_x: blobData.x * canvas.width,
-                    target_y: blobData.y * canvas.height,
+                    target_absolute_x: blobData.x * liquidCanvas.width,
+                    target_absolute_y: blobData.y * liquidCanvas.height,
 
-                    fillColor: `hsla(${blobData.hue * 360}, ${blobData.saturation * 100}%, 55%, 0.75)`
+                    current_hue: blobData.hue,
+                    current_saturation: blobData.saturation,
+                    css_color_string: `hsla(${blobData.hue * 360}, ${blobData.saturation * 100}%, 55%, 0.75)`
                 }));
 
-                statusText.innerText = `Interactive Lava Lamp`;
-                fetchContinuousUpdates();
+                statusTextElement.innerText = `Liquid Core Initialized with ${data.entropy_used} subatomic measurements.`;
+                fetchQuantumUpdatesContinously();
             } catch (error) {
-                statusText.innerText = "Lava Lamp Initialization Failed";
+                statusTextElement.innerText = "Quantum Initialization Failed";
             }
         }
 
-        async function fetchContinuousUpdates() {
+        async function fetchQuantumUpdatesContinously() {
             try {
-                const updateResponse = await fetch(`/api/stream_updates?n=${targetBlobs}`);
-                const updateData = await updateResponse.json();
+                const response = await fetch(`/api/stream_updates?n=${targetBlobCount}`);
+                const data = await response.json();
 
-                updateData.updates.forEach(incomingUpdate => {
-                    const targetBlob = activeBlobs[incomingUpdate.id];
+                data.updates.forEach(updateData => {
+                    const targetBlob = liquidBlobsArray[updateData.id];
                     if (targetBlob) {
-                        targetBlob.target_hue = incomingUpdate.target_hue;
-                        targetBlob.target_sat = incomingUpdate.target_sat;
-                        targetBlob.lerp_speed = incomingUpdate.lerp_speed;
-
-                        targetBlob.target_x = incomingUpdate.target_x_norm * canvas.width;
-                        targetBlob.target_y = incomingUpdate.target_y_norm * canvas.height;
+                        // Map the short backend names to the descriptive frontend names
+                        targetBlob.target_hue = updateData.target_hue;
+                        targetBlob.target_saturation = updateData.target_sat;
+                        targetBlob.color_morph_speed = updateData.lerp_speed;
+                        targetBlob.target_absolute_x = updateData.target_x_norm * liquidCanvas.width;
+                        targetBlob.target_absolute_y = updateData.target_y_norm * liquidCanvas.height;
                     }
                 });
 
-                setTimeout(fetchContinuousUpdates, 3000);
+                setTimeout(fetchQuantumUpdatesContinously, 3000);
             } catch (error) {
-                setTimeout(fetchContinuousUpdates, 5000);
+                setTimeout(fetchQuantumUpdatesContinously, 5000);
             }
         }
 
-        function updateBlobPhysics() {
-            activeBlobs.forEach(blob => {
-                // Apply velocity
-                blob.x += blob.vx;
-                blob.y += blob.vy;
+        function updatePhysicsAndColors() {
+            liquidBlobsArray.forEach(liquidBlob => {
+                liquidBlob.absolute_position_x += liquidBlob.velocity_x;
+                liquidBlob.absolute_position_y += liquidBlob.velocity_y;
 
-                // Move towards target coordinates
-                blob.vx += (blob.target_x - blob.x) * 0.00008;
-                blob.vy += (blob.target_y - blob.y) * 0.00008;
+                // Quantum Gravity Pull
+                liquidBlob.velocity_x += (liquidBlob.target_absolute_x - liquidBlob.absolute_position_x) * 0.00008;
+                liquidBlob.velocity_y += (liquidBlob.target_absolute_y - liquidBlob.absolute_position_y) * 0.00008;
 
-                // Mouse interaction (repel)
-                if (isMousePressed) {
-                    const deltaX = blob.x - mousePositionX;
-                    const deltaY = blob.y - mousePositionY;
-                    const distanceToMouse = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+                // Mouse Repulsion Logic
+                if (isUserDragging) {
+                    const distanceX = liquidBlob.absolute_position_x - currentMouseX;
+                    const distanceY = liquidBlob.absolute_position_y - currentMouseY;
+                    const absoluteDistanceToMouse = Math.sqrt(distanceX * distanceX + distanceY * distanceY);
                     const repulsionRadius = 350;
 
-                    if (distanceToMouse < repulsionRadius) {
-                        const repulsionForce = (repulsionRadius - distanceToMouse) / repulsionRadius;
-                        blob.vx += (deltaX / distanceToMouse) * repulsionForce * 2.0;
-                        blob.vy += (deltaY / distanceToMouse) * repulsionForce * 2.0;
+                    if (absoluteDistanceToMouse < repulsionRadius) {
+                        const repulsionForce = (repulsionRadius - absoluteDistanceToMouse) / repulsionRadius;
+                        liquidBlob.velocity_x += (distanceX / absoluteDistanceToMouse) * repulsionForce * 2.0;
+                        liquidBlob.velocity_y += (distanceY / absoluteDistanceToMouse) * repulsionForce * 2.0;
                     }
                 }
 
-                // Apply friction
-                blob.vx *= 0.98;
-                blob.vy *= 0.98;
+                // Apply Friction
+                liquidBlob.velocity_x *= 0.98;
+                liquidBlob.velocity_y *= 0.98;
 
-                // Bounce off edges
-                if (blob.x < -100 || blob.x > canvas.width + 100) blob.vx *= -1;
-                if (blob.y < -100 || blob.y > canvas.height + 100) blob.vy *= -1;
+                // Screen Boundary Bounces
+                if (liquidBlob.absolute_position_x < -100 || liquidBlob.absolute_position_x > liquidCanvas.width + 100) {
+                    liquidBlob.velocity_x *= -1;
+                }
+                if (liquidBlob.absolute_position_y < -100 || liquidBlob.absolute_position_y > liquidCanvas.height + 100) {
+                    liquidBlob.velocity_y *= -1;
+                }
 
-                // Interpolate colors smoothly
-                blob.hue = interpolateHue(blob.hue, blob.target_hue, blob.lerp_speed);
-                blob.saturation = linearInterpolate(blob.saturation, blob.target_sat, blob.lerp_speed);
-
-                blob.fillColor = `hsla(${blob.hue * 360}, ${blob.saturation * 100}%, 55%, 0.75)`;
+                // Smooth Color Morphing
+                liquidBlob.current_hue = interpolateHue(liquidBlob.current_hue, liquidBlob.target_hue, liquidBlob.color_morph_speed);
+                liquidBlob.current_saturation = interpolateLinear(liquidBlob.current_saturation, liquidBlob.target_saturation, liquidBlob.color_morph_speed);
+                liquidBlob.css_color_string = `hsla(${liquidBlob.current_hue * 360}, ${liquidBlob.current_saturation * 100}%, 55%, 0.75)`;
             });
         }
 
-        function renderFrame() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        function drawAnimationLoop() {
+            canvasContext.clearRect(0, 0, liquidCanvas.width, liquidCanvas.height);
 
-            if (activeBlobs.length > 0) {
-                updateBlobPhysics();
+            if (liquidBlobsArray.length > 0) {
+                updatePhysicsAndColors();
 
-                ctx.globalCompositeOperation = 'screen';
+                canvasContext.globalCompositeOperation = 'screen';
 
-                activeBlobs.forEach(blob => {
-                    ctx.beginPath();
-                    ctx.arc(blob.x, blob.y, blob.radius, 0, Math.PI * 2);
-                    ctx.fillStyle = blob.fillColor;
-                    ctx.fill();
+                liquidBlobsArray.forEach(liquidBlob => {
+                    canvasContext.beginPath();
+                    canvasContext.arc(liquidBlob.absolute_position_x, liquidBlob.absolute_position_y, liquidBlob.radius, 0, Math.PI * 2);
+                    canvasContext.fillStyle = liquidBlob.css_color_string;
+                    canvasContext.fill();
                 });
             }
-            requestAnimationFrame(renderFrame);
+            requestAnimationFrame(drawAnimationLoop);
         }
 
-        // Event Listeners
-        window.addEventListener('mousedown', (event) => { isMousePressed = true; mousePositionX = event.clientX; mousePositionY = event.clientY; });
-        window.addEventListener('mouseup', () => { isMousePressed = false; });
-        window.addEventListener('mousemove', (event) => { mousePositionX = event.clientX; mousePositionY = event.clientY; });
-
-        // Mobile Touch Interaction
-        window.addEventListener('touchstart', (e) => {
-            isDragging = true;
-            // e.touches[0] gets the coordinates of the user's first finger on the screen
-            mouseX = e.touches[0].clientX;
-            mouseY = e.touches[0].clientY;
+        // --- Event Listeners ---
+        window.addEventListener('pointerdown', (pointerEvent) => {
+            isUserDragging = true;
+            currentMouseX = pointerEvent.clientX;
+            currentMouseY = pointerEvent.clientY;
         });
 
-        window.addEventListener('touchend', () => {
-            isDragging = false;
+        window.addEventListener('pointermove', (pointerEvent) => {
+            currentMouseX = pointerEvent.clientX;
+            currentMouseY = pointerEvent.clientY;
         });
 
-        window.addEventListener('touchmove', (e) => {
-            if (isDragging) {
-                mouseX = e.touches[0].clientX;
-                mouseY = e.touches[0].clientY;
-            }
+        window.addEventListener('pointerup', () => {
+            isUserDragging = false;
         });
 
-        window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; });
+        window.addEventListener('pointercancel', () => {
+            isUserDragging = false;
+        });
 
-        // Start Application
-        initializeLiquid().then(() => renderFrame());
+        document.addEventListener('touchmove', (touchEvent) => {
+            touchEvent.preventDefault();
+        }, { passive: false });
+
+        window.addEventListener('resize', () => {
+            liquidCanvas.width = window.innerWidth;
+            liquidCanvas.height = window.innerHeight;
+        });
+
+        // Start the engine
+        initializeLiquidSimulation().then(() => drawAnimationLoop());
     </script>
 </body>
 
