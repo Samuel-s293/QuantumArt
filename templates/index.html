@@ -14,6 +14,7 @@
             justify-content: center;
             align-items: center;
             height: 100vh;
+            touch-action: none;
         }
 
         #canvasContainer {
@@ -205,6 +206,26 @@
         window.addEventListener('mousedown', (event) => { isMousePressed = true; mousePositionX = event.clientX; mousePositionY = event.clientY; });
         window.addEventListener('mouseup', () => { isMousePressed = false; });
         window.addEventListener('mousemove', (event) => { mousePositionX = event.clientX; mousePositionY = event.clientY; });
+
+        // Mobile Touch Interaction
+        window.addEventListener('touchstart', (e) => {
+            isDragging = true;
+            // e.touches[0] gets the coordinates of the user's first finger on the screen
+            mouseX = e.touches[0].clientX;
+            mouseY = e.touches[0].clientY;
+        });
+
+        window.addEventListener('touchend', () => {
+            isDragging = false;
+        });
+
+        window.addEventListener('touchmove', (e) => {
+            if (isDragging) {
+                mouseX = e.touches[0].clientX;
+                mouseY = e.touches[0].clientY;
+            }
+        });
+
         window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; });
 
         // Start Application
