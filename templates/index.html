@@ -76,6 +76,10 @@
         let currentMouseX = window.innerWidth / 2;
         let currentMouseY = window.innerHeight / 2;
         let isUserDragging = false;
+        let audioContext;
+        let masterVolume;
+        let quantumOscillators = [];
+        let isAudioInitialized = false;
 
         const targetBlobCount = window.innerWidth < 768 ? 18 : 23;
 
@@ -122,6 +126,49 @@
             } catch (error) {
                 statusTextElement.innerText = "Quantum Initialization Failed";
             }
+        }
+
+        function initQuantumAudio() {
+            if (isAudioInitialized) return;
+
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+            // Master Gain with a Limiter approach to prevent clipping/crackling
+            masterVolume = audioContext.createGain();
+            // Start at a near-zero value for a smooth exponential ramp later
+            masterVolume.gain.setValueAtTime(0.0001, audioContext.currentTime);
+            masterVolume.connect(audioContext.destination);
+
+            // --- THE NEW CHORD: D - E - A ---
+            // This is a 'Suspended' feel. It sounds high-tech and "unresolved."
+            const futuristicFrequencies = [146.83, 164.81, 220.00]; // D3, E3, A3
+
+            for (let i = 0; i < futuristicFrequencies.length; i++) {
+                let oscillator = audioContext.createOscillator();
+                let panner = audioContext.createStereoPanner();
+                let filter = audioContext.createBiquadFilter();
+
+                oscillator.type = 'sine';
+                oscillator.frequency.value = futuristicFrequencies[i];
+
+                // Add a low-pass filter to each voice to shave off "digital harshness"
+                filter.type = 'lowpass';
+                filter.frequency.value = 800;
+
+                oscillator.connect(filter);
+                filter.connect(panner);
+                panner.connect(masterVolume);
+
+                oscillator.start();
+
+                quantumOscillators.push({
+                    oscillator: oscillator,
+                    panner: panner,
+                    baseFrequency: futuristicFrequencies[i]
+                });
+            }
+
+            isAudioInitialized = true;
         }
 
         async function fetchQuantumUpdatesContinously() {
@@ -186,6 +233,21 @@
                 liquidBlob.current_hue = interpolateHue(liquidBlob.current_hue, liquidBlob.target_hue, liquidBlob.color_morph_speed);
                 liquidBlob.current_saturation = interpolateLinear(liquidBlob.current_saturation, liquidBlob.target_saturation, liquidBlob.color_morph_speed);
                 liquidBlob.css_color_string = `hsla(${liquidBlob.current_hue * 360}, ${liquidBlob.current_saturation * 100}%, 55%, 0.75)`;
+
+                // We will only use the first 3 blobs to control the 3 audio oscillators
+                if (isAudioInitialized && liquidBlob.id < 3) {
+                    let audioNode = quantumOscillators[liquidBlob.id];
+
+                    // 1. Map X position to left/right speaker panning (-1.0 to 1.0)
+                    let panValue = (liquidBlob.absolute_position_x / liquidCanvas.width) * 2 - 1;
+                    // Keep panning within safe limits
+                    panValue = Math.max(-1, Math.min(1, panValue));
+                    audioNode.panner.pan.setTargetAtTime(panValue, audioContext.currentTime, 0.1);
+
+                    // 2. Map Y position to a gentle pitch bend (vibrato)
+                    let pitchShift = ((liquidBlob.absolute_position_y / liquidCanvas.height) - 0.5) * 15;
+                    audioNode.oscillator.frequency.setTargetAtTime(audioNode.baseFrequency + pitchShift, audioContext.currentTime, 0.1);
+                }
             });
         }
 
@@ -207,11 +269,18 @@
             requestAnimationFrame(drawAnimationLoop);
         }
 
-        // --- Event Listeners ---
+
         window.addEventListener('pointerdown', (pointerEvent) => {
+            initQuantumAudio();
             isUserDragging = true;
             currentMouseX = pointerEvent.clientX;
             currentMouseY = pointerEvent.clientY;
+
+            // Smoothly fade the audio IN over 0.2 seconds
+            if (audioContext && masterVolume) {
+                masterVolume.gain.cancelScheduledValues(audioContext.currentTime);
+                masterVolume.gain.setTargetAtTime(0.08, audioContext.currentTime, 0.2);
+            }
         });
 
         window.addEventListener('pointermove', (pointerEvent) => {
@@ -221,10 +290,22 @@
 
         window.addEventListener('pointerup', () => {
             isUserDragging = false;
+
+            // Smoothly fade the audio OUT over 0.3 seconds
+            if (audioContext && masterVolume) {
+                masterVolume.gain.cancelScheduledValues(audioContext.currentTime);
+                masterVolume.gain.setTargetAtTime(0, audioContext.currentTime, 0.3);
+            }
         });
 
         window.addEventListener('pointercancel', () => {
             isUserDragging = false;
+
+            // Smoothly fade the audio OUT if the interaction is interrupted
+            if (audioContext && masterVolume) {
+                masterVolume.gain.cancelScheduledValues(audioContext.currentTime);
+                masterVolume.gain.setTargetAtTime(0, audioContext.currentTime, 0.3);
+            }
         });
 
         document.addEventListener('touchmove', (touchEvent) => {
